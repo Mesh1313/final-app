@@ -6,6 +6,7 @@ export enum DriverLocationStatus {
   DELIVERING = 'delivering',
   RETURNING = 'returning',
   OFFLINE = 'offline',
+  PAUSED = 'paused'
 }
 
 export type DriverLocation = {
@@ -21,6 +22,7 @@ export type Driver = {
   id: string
   name: string
   isActive: boolean
+  isPaused?: boolean
   currentLocation?: DriverLocation
 }
 
@@ -54,6 +56,12 @@ export enum DeliveryAction {
   RESUME = 'resume',
   COMPLETE = 'complete',
   CANCEL = 'cancel',
+  REASSIGN = 'reassign',
+}
+
+export enum DriverAction {
+  PAUSE = 'pause_driver',
+  RESUME = 'resume_driver',
 }
 
 export type MarkerCoordinates = { longitude: number, latitude: number }

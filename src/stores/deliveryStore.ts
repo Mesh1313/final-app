@@ -1,4 +1,4 @@
-import { DeliveryAction, type Delivery, type Driver, type DriverLocation, type DriverLocationStatus } from '@/types/delivery.types'
+import { DeliveryAction, DriverAction, type Delivery, type Driver, type DriverLocation, type DriverLocationStatus } from '@/types/delivery.types'
 import { DeliveryStatus } from '@/types/delivery.types'
 import { create } from 'zustand'
 
@@ -23,6 +23,7 @@ interface DeliveryStoreState {
   getDeliveriesByStatus: (status: DeliveryStatus) => Delivery[]
   getDriverDeliveries: (driverId: string) => Delivery[]
   getDriverById: (id: string) => Driver | undefined
+  getAvailableDrivers: () => Driver[]
 }
 
 interface DeliveryStoreActions {
@@ -30,13 +31,19 @@ interface DeliveryStoreActions {
   addDriver: (driver: Driver) => void
   updateDriver: (driverId: string, updates: Partial<Driver>) => void
   removeDriver: (driverId: string) => void
+  pauseDriver: (driverId: string) => void
+  resumeDriver: (driverId: string) => void
   // Deliveries
   addDelivery: (delivery: Delivery) => void
   updateDelivery: (deliveryId: string, updates: Partial<Delivery>) => void
+  reassignDelivery: (deliveryId: string, newDriverId: string) => void
+  completeDelivery: (deliveryId: string) => void
   // Locations
   updateDriverLocation: (location: DriverLocation) => void
   // Delivery Actions
-  performDeliveryAction: (deliveryId: string, action: DeliveryAction) => void
+  performDeliveryAction: (deliveryId: string, action: DeliveryAction, newDriverId?: string) => void
+  // Driver Actions
+  performDriverAction: (driverId: string, action: DriverAction) => void
   
   setConnectionStatus: (isConnected: boolean) => void
 }
@@ -81,6 +88,22 @@ export const useDeliveryStore = create<DeliveryStoreState & DeliveryStoreActions
       }
     }),
 
+  pauseDriver: (driverId) =>
+    set((state) => ({
+      drivers: {
+        ...state.drivers,
+        [driverId]: { ...state.drivers[driverId], isPaused: true }
+      }
+    })),
+
+  resumeDriver: (driverId) =>
+    set((state) => ({
+      drivers: {
+        ...state.drivers,
+        [driverId]: { ...state.drivers[driverId], isPaused: false }
+      }
+    })),
+
   // Delivery actions
   addDelivery: (delivery) =>
     set((state) => ({
@@ -97,6 +120,45 @@ export const useDeliveryStore = create<DeliveryStoreState & DeliveryStoreActions
         [deliveryId]: { ...state.deliveries[deliveryId], ...updates }
       }
     })),
+
+  reassignDelivery: (deliveryId, newDriverId) =>
+    set((state) => {
+      const delivery = state.deliveries[deliveryId]
+      if (!delivery) return state
+
+      return {
+        deliveries: {
+          ...state.deliveries,
+          [deliveryId]: {
+            ...delivery,
+            driverId: newDriverId,
+            status: DeliveryStatus.ASSIGNED,
+          }
+        }
+      }
+    }),
+
+  completeDelivery: (deliveryId) =>
+    set((state) => {
+      const delivery = state.deliveries[deliveryId]
+      if (!delivery) return state
+
+      const now = Date.now()
+      const updatedDelivery = {
+        ...delivery,
+        status: DeliveryStatus.COMPLETED,
+        completedAt: now,
+        actualDeliveryTime: new Date(now).toISOString()
+      }
+
+      return {
+        deliveries: {
+          ...state.deliveries,
+          [deliveryId]: updatedDelivery
+        },
+        activeDeliveries: state.activeDeliveries.filter(id => id !== deliveryId)
+      }
+    }),
 
   // Location updates
   updateDriverLocation: (location) =>
@@ -127,7 +189,7 @@ export const useDeliveryStore = create<DeliveryStoreState & DeliveryStoreActions
     }),
 
   // Delivery actions
-  performDeliveryAction: (deliveryId, action) =>
+  performDeliveryAction: (deliveryId, action, newDriverId) =>
     set((state) => {
       const delivery = state.deliveries[deliveryId]
       if (!delivery) return state
@@ -168,6 +230,16 @@ export const useDeliveryStore = create<DeliveryStoreState & DeliveryStoreActions
             completedAt: now
           }
           break
+        case DeliveryAction.REASSIGN:
+          if (!newDriverId) return state
+          updates = {
+            driverId: newDriverId,
+            status: DeliveryStatus.ASSIGNED,
+            startedAt: undefined,
+            pausedAt: undefined,
+            completedAt: undefined
+          }
+          break
       }
 
       const updatedDelivery = { ...delivery, ...updates }
@@ -183,6 +255,31 @@ export const useDeliveryStore = create<DeliveryStoreState & DeliveryStoreActions
             ? state.activeDeliveries
             : [...state.activeDeliveries, deliveryId]
           : state.activeDeliveries.filter(id => id !== deliveryId)
+      }
+    }),
+
+  performDriverAction: (driverId, action) =>
+    set((state) => {
+      const driver = state.drivers[driverId]
+      if (!driver) return state
+
+      switch (action) {
+        case DriverAction.PAUSE:
+          return {
+            drivers: {
+              ...state.drivers,
+              [driverId]: { ...driver, isPaused: true }
+            }
+          }
+        case DriverAction.RESUME:
+          return {
+            drivers: {
+              ...state.drivers,
+              [driverId]: { ...driver, isPaused: false }
+            }
+          }
+        default:
+          return state
       }
     }),
 
@@ -214,6 +311,13 @@ export const useDeliveryStore = create<DeliveryStoreState & DeliveryStoreActions
   getDriverById: (id: string): Driver | undefined => {
     const state = get()
     return state.drivers[id]
+  },
+
+  getAvailableDrivers: () => {
+    const state = get()
+    return Object.values(state.drivers).filter(
+      driver => driver.isActive && !driver.isPaused
+    )
   },
 
 }))

@@ -7,11 +7,13 @@ import DriverDetailsView from './components/DriverDetailsView'
 import useDeliveryTracking from '@/hooks/useDeliveryTracking'
 import type { DriverLocation, MarkerCoordinates } from '@/types/delivery.types'
 import { useDeliveryStore } from '@/stores/deliveryStore'
+import DeliveryManagement from './components/DeliveryManagement'
 
 function Root() {
   const location = useLocation()
   const [mapCenter, setMapCenter] = useState<[number, number]>([Number(import.meta.env.VITE_MAP_DEFAULT_LON), Number(import.meta.env.VITE_MAP_DEFAULT_LAT)])
   const [currentDriverId, setCurrentDriverId] = useState<string>()
+  const [showManagementModal, setShowManagementModal] = useState(false)
 
   useEffect(() => {
     deliveryService.loadDrivers()
@@ -26,14 +28,20 @@ function Root() {
 
   const selectDriver = useCallback((id: string) => setCurrentDriverId(id), [])
   const closeDetailsView = useCallback(() => setCurrentDriverId(undefined), [])
+  const onManagePress = useCallback(() => setShowManagementModal(true), [])
 
   return (
     <div className='h-full w-full bg-gray-100 flex items-center justify-center'>
       <MapWrapper center={mapCenter} currentDriverId={currentDriverId} />
 
-      <DriversView onSelect={selectDriver} />
+      <DriversView onSelect={selectDriver} onManagePress={onManagePress} />
 
       {currentDriverId && <DriverDetailsView driverId={currentDriverId} onClose={closeDetailsView} />}
+
+      <DeliveryManagement
+        isOpen={showManagementModal}
+        onClose={() => setShowManagementModal(false)} 
+      />
     </div>
   )
 }

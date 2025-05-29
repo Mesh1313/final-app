@@ -101,10 +101,6 @@ class MockDeliveryWebSocketService {
     this.mockWS?.removeMockDriver(driverId)
   }
 
-  getDriverStates() {
-    return this.mockWS?.getDriverStates() || {}
-  }
-
   disconnect() {
     if (this.reconnectTimeoutId) {
       clearTimeout(this.reconnectTimeoutId)

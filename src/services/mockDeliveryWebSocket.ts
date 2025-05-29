@@ -1,4 +1,4 @@
-import { DeliveryAction, type Driver, type DriverLocation, DriverLocationStatus } from '@/types/delivery.types'
+import { DeliveryAction, type Driver, DriverAction, type DriverLocation, DriverLocationStatus } from '@/types/delivery.types'
 
 interface MockDriver {
   id: string
@@ -9,11 +9,12 @@ interface MockDriver {
   status: DriverLocation['status']
   speed: number
   interpolationStep: number
+  isPaused: boolean
 }
 
 type Callback = (...args: any[]) => void
 
-const START_LOCATION: [number, number] = [-52.832299, 47.521486]
+const START_LOCATION: [number, number] = [import.meta.env.VITE_MAP_DEFAULT_LON, import.meta.env.VITE_MAP_DEFAULT_LAT]
 
 class MockDeliveryWebSocket {
   private listeners: { [key: string]: Callback[] } = {}
@@ -35,28 +36,30 @@ class MockDeliveryWebSocket {
           currentIndex: 0,
           interpolationStep: 0,
           status: DriverLocationStatus.EN_ROUTE,
-          route
+          route,
+          isPaused: driver.isPaused || false
         } as MockDriver
       )
     })
   }
 
   private generateDeliveryRoute(start: [number, number]): [number, number][] {
-    const [startLng, startLat] = start
+    const [startLng, startLat] = start.map(coord => Number(coord))
     
     // Random route size between 0.01 and 0.05
-    const routeSize = Math.random() * (0.05 - 0.01) + 0.01
+    const routeSize = Math.random() * (0.002 - 0.008) + 0.01
     const route: [number, number][] = []
 
     // Generate random number of delivery stops (2-5)
     const numDeliveryStops = Math.floor(Math.random() * 4) + 2 // 2 to 5
     
     const stops = []
+    const radiusRange = 0.8 - 0.3
     
     // Always start with pickup
     stops.push({ 
       angle: 0, 
-      radius: Math.random() * (1 - 0.1) + 0.1, // 0.1 to 1
+      radius: Math.random() * radiusRange + 0.1,
       name: 'pickup' 
     })
     
@@ -64,7 +67,7 @@ class MockDeliveryWebSocket {
     for (let i = 1;  i <= numDeliveryStops; i++) {
       stops.push({
         angle: Math.random() * 10, // 0 to 10 radians
-        radius: Math.random() * (1 - 0.1) + 0.1, // 0.1 to 1
+        radius: Math.random() * radiusRange + 0.1,
         name: `delivery${i}`
       })
     }
@@ -72,7 +75,7 @@ class MockDeliveryWebSocket {
     // Always end with return
     stops.push({ 
       angle: Math.random() * 10, // 0 to 10 radians
-      radius: Math.random() * (1 - 0.1) + 0.1, // 0.1 to 1
+      radius: Math.random() * radiusRange + 0.1,
       name: 'return' 
     })
 
@@ -109,7 +112,8 @@ class MockDeliveryWebSocket {
     ]
   }
 
-  private getDriverStatus(routeProgress: number): DriverLocationStatus {
+  private getDriverStatus(routeProgress: number, isPaused: boolean): DriverLocationStatus {
+    if (isPaused) return DriverLocationStatus.PAUSED
     if (routeProgress < 0.2) return DriverLocationStatus.EN_ROUTE
     if (routeProgress < 0.8) return DriverLocationStatus.DELIVERING
     return DriverLocationStatus.RETURNING
@@ -153,6 +157,21 @@ class MockDeliveryWebSocket {
     this.intervalId = setInterval(() => {
       this.mockDrivers.forEach((driver, driverId) => {
         const currentPoint = driver.route[driver.currentIndex]
+        // Skip movement if driver is paused
+        if (driver.isPaused) {
+          
+          const locationData: DriverLocation = {
+            driverId,
+            latitude: currentPoint[1] + (Math.random() - 0.5) * 0.0001,
+            longitude: currentPoint[0] + (Math.random() - 0.5) * 0.0001,
+            status: DriverLocationStatus.PAUSED,
+            eta: '???',
+            timestamp: Date.now(),
+          }
+          this.emitMessage(locationData)
+          return
+        }
+
         const nextIndex = (driver.currentIndex + 1) % driver.route.length
         const nextPoint = driver.route[nextIndex]
         
@@ -174,7 +193,7 @@ class MockDeliveryWebSocket {
           driverId,
           latitude: noiseLat,
           longitude: noiseLng,
-          status: this.getDriverStatus(routeProgress),
+          status: this.getDriverStatus(routeProgress, driver.isPaused),
           eta: this.getETA(routeProgress),
           timestamp: Date.now()
         }
@@ -218,6 +237,12 @@ class MockDeliveryWebSocket {
         case 'delivery_action':
           this.handleDeliveryAction(message)
           break
+        case 'driver_action':
+          this.handleDriverAction(message)
+          break
+        case 'reassign_delivery':
+          this.handleDeliveryReassignment(message)
+          break
         case 'request_location':
           this.handleLocationRequest(message)
           break
@@ -254,6 +279,32 @@ class MockDeliveryWebSocket {
     }
   }
 
+  private handleDriverAction(message: any) {
+    const { driverId, action } = message
+    const driver = this.mockDrivers.get(driverId)
+
+    if (!driver) return
+
+    console.log(`Driver ${driverId} action: ${action}`)
+
+    switch (action) {
+      case DriverAction.PAUSE:
+        driver.isPaused = true
+        driver.status = DriverLocationStatus.PAUSED
+        break
+      case DriverAction.RESUME:
+        driver.isPaused = false
+        driver.status = DriverLocationStatus.EN_ROUTE
+        break
+    }
+  }
+
+  private handleDeliveryReassignment(message: any) {
+    const { oldDriverId, newDriverId } = message
+    
+    console.log(`Reassigning delivery from driver ${oldDriverId} to driver ${newDriverId}`)
+  }
+
   private handleLocationRequest(message: any) {
     const { driverId } = message
     const driver = this.mockDrivers.get(driverId)
@@ -266,8 +317,8 @@ class MockDeliveryWebSocket {
       driverId,
       latitude: currentPoint[1],
       longitude: currentPoint[0],
-      status: driver.status,
-      eta: this.getETA(driver.currentIndex / driver.route.length),
+      status: driver.isPaused ? DriverLocationStatus.PAUSED : driver.status,
+      eta: driver.isPaused ? '???' : this.getETA(driver.currentIndex / driver.route.length),
       timestamp: Date.now()
     } 
     
@@ -285,7 +336,8 @@ class MockDeliveryWebSocket {
       currentIndex: 0,
       status: DriverLocationStatus.IDLE,
       speed: 40 + Math.random() * 20, // 40-60 km/h
-      interpolationStep: 0
+      interpolationStep: 0,
+      isPaused: false,
     }) 
     
     console.log(`Added mock driver: ${name} (${driverId})`) 
@@ -296,19 +348,24 @@ class MockDeliveryWebSocket {
     console.log(`Removed mock driver: ${driverId}`) 
   }
 
-  // Get current state for debugging
-  getDriverStates() {
-    const states: Record<string, any> = {} 
-    this.mockDrivers.forEach((driver, id) => {
-      states[id] = {
-        name: driver.name,
-        currentIndex: driver.currentIndex,
-        totalPoints: driver.route.length,
-        status: driver.status,
-        progress: `${((driver.currentIndex / driver.route.length) * 100).toFixed(1)}%`
-      } 
-    }) 
-    return states 
+  pauseDriver(driverId: string) {
+    const driver = this.mockDrivers.get(driverId)
+
+    if (driver) {
+      driver.isPaused = true
+      driver.status = DriverLocationStatus.PAUSED
+      console.log(`Paused driver: ${driverId}`)
+    }
+  }
+
+  resumeDriver(driverId: string) {
+    const driver = this.mockDrivers.get(driverId)
+
+    if (driver) {
+      driver.isPaused = false
+      driver.status = DriverLocationStatus.EN_ROUTE
+      console.log(`Resumed driver: ${driverId}`)
+    }
   }
 
   close() {

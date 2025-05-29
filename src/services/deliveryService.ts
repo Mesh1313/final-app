@@ -1,7 +1,7 @@
 import { useDeliveryStore } from '@/stores/deliveryStore'
 // import { deliveryWebSocketService, } from './deliveryWebSocketService'
 import { mockDeliveryWebSocketService } from './mockDeliveryWebSocketService'
-import { type Delivery, type Driver, type DeliveryAction, DeliveryStatus } from '@/types/delivery.types'
+import { type Delivery, DeliveryAction, type Driver, DeliveryStatus, DriverAction } from '@/types/delivery.types'
 
 class DeliveryService {
   private initialized: boolean = false
@@ -25,22 +25,26 @@ class DeliveryService {
         {
           id: '123',
           name: 'John Doe',
-          isActive: true
+          isActive: true,
+          isPaused: false,
         },
         {
           id: '456',
           name: 'Jane Smith',
-          isActive: true
+          isActive: true,
+          isPaused: false,
         },
         {
           id: '789',
           name: 'Ashley Coleman',
-          isActive: true
+          isActive: true,
+          isPaused: false,
         },
         {
           id: '010',
           name: 'Wallace Smith',
-          isActive: true
+          isActive: true,
+          isPaused: false,
         }
       ]
 
@@ -91,7 +95,7 @@ class DeliveryService {
     }
   }
 
-  async performDeliveryAction(deliveryId: string, action: DeliveryAction) {
+  async performDeliveryAction(deliveryId: string, action: DeliveryAction, newDriverId?: string) {
     try {
       const delivery = useDeliveryStore.getState().deliveries[deliveryId]
 
@@ -99,13 +103,72 @@ class DeliveryService {
         throw new Error('Delivery not found')
       }
 
-      mockDeliveryWebSocketService.sendDeliveryAction(delivery.driverId, deliveryId, action)
+      // Send message to websocket with the action
+      if (action === DeliveryAction.REASSIGN && newDriverId) {
+        mockDeliveryWebSocketService.sendMessage({
+          type: 'reassign_delivery',
+          deliveryId,
+          oldDriverId: delivery.driverId,
+          newDriverId,
+          timestamp: Date.now()
+        })
+        
+        // Update the store
+        useDeliveryStore.getState().performDeliveryAction(deliveryId, action, newDriverId)
+      } else {
+        mockDeliveryWebSocketService.sendDeliveryAction(delivery.driverId, deliveryId, action)
+        
+        // Update the store
+        useDeliveryStore.getState().performDeliveryAction(deliveryId, action)
+      }
 
     } catch (error) {
       console.error('Failed to perform delivery action:', error)
       throw error
     }
   }
+
+  async performDriverAction(driverId: string, action: DriverAction) {
+    try {
+      const driver = useDeliveryStore.getState().getDriverById(driverId)
+
+      if (!driver) {
+        throw new Error('Driver not found')
+      }
+
+      // Send message to websocket
+      mockDeliveryWebSocketService.sendMessage({
+        type: 'driver_action',
+        driverId,
+        action,
+        timestamp: Date.now()
+      })
+
+      // Update the store
+      useDeliveryStore.getState().performDriverAction(driverId, action)
+
+    } catch (error) {
+      console.error('Failed to perform driver action:', error)
+      throw error
+    }
+  }
+
+  async reassignDelivery(deliveryId: string, newDriverId: string) {
+    return this.performDeliveryAction(deliveryId, DeliveryAction.REASSIGN, newDriverId)
+  }
+
+  async completeDelivery(deliveryId: string) {
+    return this.performDeliveryAction(deliveryId, DeliveryAction.COMPLETE)
+  }
+
+  async pauseDriver(driverId: string) {
+    return this.performDriverAction(driverId, DriverAction.PAUSE)
+  }
+
+  async resumeDriver(driverId: string) {
+    return this.performDriverAction(driverId, DriverAction.RESUME)
+  }
+
 
   async createDelivery(deliveryData: Partial<Omit<Delivery, 'id' | 'createdAt' | 'status'>>) {
     try {
