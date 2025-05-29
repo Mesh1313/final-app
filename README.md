@@ -2,6 +2,42 @@
 
 A real-time delivery tracking application built with React, TypeScript, and Vite. This project demonstrates modern web development practices including real-time WebSocket communication, interactive mapping, and comprehensive delivery management capabilities.
 
+## 🚦 Getting Started
+
+### Prerequisites
+- Node.js (v18 or higher)
+- npm or yarn package manager
+
+### Environment Setup
+1. Copy the environment variables:
+```bash
+cp .env.example .env
+```
+
+2. Configure your Mapbox API token in `.env`:
+```env
+VITE_MAPBOX_API_TOKEN=your_mapbox_token_here
+VITE_MAP_DEFAULT_LON=-52.731372
+VITE_MAP_DEFAULT_LAT=47.562465
+VITE_DELIVERY_WS_URL=ws://localhost:8080/delivery-tracking
+```
+
+### Installation & Running
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
 ## 🚀 Features
 
 ### Core Functionality
@@ -58,42 +94,6 @@ src/
 ├── types/              # TypeScript type definitions
 │   └── delivery.types.ts
 └── utils/              # Helper functions
-```
-
-## 🚦 Getting Started
-
-### Prerequisites
-- Node.js (v18 or higher)
-- npm or yarn package manager
-
-### Environment Setup
-1. Copy the environment variables:
-```bash
-cp .env.example .env
-```
-
-2. Configure your Mapbox API token in `.env`:
-```env
-VITE_MAPBOX_API_TOKEN=your_mapbox_token_here
-VITE_MAP_DEFAULT_LON=-52.731372
-VITE_MAP_DEFAULT_LAT=47.562465
-VITE_DELIVERY_WS_URL=ws://localhost:8080/delivery-tracking
-```
-
-### Installation & Running
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
 ```
 
 ## 🎮 Usage
